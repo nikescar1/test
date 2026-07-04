@@ -113,6 +113,11 @@
   .tfilters input{width:96px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);
     font-family:var(--font-mono);font-size:13px;padding:7px 9px}
   .tfilters input:focus{outline:none;border-color:var(--green)}
+  .colorChips{display:flex;flex-wrap:wrap;gap:6px;max-width:460px}
+  .colorChip{font-family:var(--font-mono);font-size:11px;color:var(--muted);background:var(--bg);
+    border:1px solid var(--line);border-radius:999px;padding:5px 10px;cursor:pointer;user-select:none;white-space:nowrap}
+  .colorChip:hover{border-color:var(--green);color:var(--ink)}
+  .colorChip.active{background:var(--green);border-color:var(--green);color:#06170f;font-weight:600}
 
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
   @media(min-width:520px){.stats{grid-template-columns:repeat(3,1fr)}}
@@ -215,6 +220,7 @@
         <div class="fg"><label>Price max</label><input id="fPriceMax" type="text" inputmode="numeric" placeholder="$ max"></div>
         <div class="fg"><label>Mileage min</label><input id="fMilesMin" type="text" inputmode="numeric" placeholder="mi min"></div>
         <div class="fg"><label>Mileage max</label><input id="fMilesMax" type="text" inputmode="numeric" placeholder="mi max"></div>
+        <div class="fg" style="flex:1 1 220px"><label>Color <span style="text-transform:none;color:var(--muted2)">(click to toggle)</span></label><div class="colorChips" id="colorChips"></div></div>
         <button class="act ghost" id="fReset" style="margin-left:auto">Reset filters</button>
       </div>
 
@@ -310,7 +316,7 @@ const TIERS=[
 
 let rows=[];
 let sortKey=null, sortDir=1;
-let filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null};
+let filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null,colors:new Set()};
 
 /* ===== helpers ===== */
 function num(x){if(x==null)return null;const n=parseInt(String(x).replace(/[^\d]/g,""),10);return isNaN(n)?null:n;}
@@ -431,6 +437,7 @@ function passesFilter(r){
   if(filt.maxPrice!=null && (!r.price||r.price>filt.maxPrice))return false;
   if(filt.minMiles!=null && (r.miles==null||r.miles<filt.minMiles))return false;
   if(filt.maxMiles!=null && (r.miles==null||r.miles>filt.maxMiles))return false;
+  if(filt.colors.size && !filt.colors.has(r.color))return false;
   return true;
 }
 
@@ -442,9 +449,16 @@ function updateSortIndicators(){
     span.textContent = sortKey===th.dataset.sort ? (sortDir===1?" ▲":" ▼") : "";
   });
 }
+function renderColorChips(){
+  const el=document.getElementById("colorChips");
+  const colors=[...new Set(rows.map(r=>r.color).filter(Boolean))].sort();
+  if(!colors.length){el.innerHTML=`<span style="color:var(--muted2);font-family:var(--font-mono);font-size:11px">no colors loaded</span>`;return;}
+  el.innerHTML=colors.map(c=>`<span class="colorChip${filt.colors.has(c)?" active":""}" data-color="${c.replace(/"/g,"&quot;")}">${c}</span>`).join("");
+}
 function renderTable(m){
   tbody.innerHTML="";
   updateSortIndicators();
+  renderColorChips();
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="5"><div class="empty">No listings. Drop a saved page, add a row, or paste text.</div></td></tr>`;return;}
   let list=rows.map((r,i)=>({r,i})).filter(o=>passesFilter(o.r)).map(o=>({...o,deal:tierForRow(m,o.r.price,o.r.miles)}));
   if(!list.length){tbody.innerHTML=`<tr><td colspan="5"><div class="empty">No cars match the current filters.</div></td></tr>`;return;}
@@ -494,9 +508,15 @@ document.querySelector("#tbl thead").addEventListener("click",e=>{
     recompute(true);
   });
 });
+document.getElementById("colorChips").addEventListener("click",e=>{
+  const chip=e.target.closest(".colorChip"); if(!chip)return;
+  const c=chip.dataset.color;
+  if(filt.colors.has(c)) filt.colors.delete(c); else filt.colors.add(c);
+  recompute(true);
+});
 document.getElementById("fReset").addEventListener("click",()=>{
   ["fPriceMin","fPriceMax","fMilesMin","fMilesMax"].forEach(id=>document.getElementById(id).value="");
-  filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null};
+  filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null,colors:new Set()};
   recompute(true);
 });
 
