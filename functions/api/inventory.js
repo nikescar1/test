@@ -166,7 +166,7 @@ function strip(c) { const { _body, _trim, year, ...rest } = c; return rest; }
 function dedupe(arr) { const s = new Set(), o = []; for (const c of arr) { const k = c.vin || `${c.price}|${c.dealer}`; if (!s.has(k)) { s.add(k); o.push(c); } } return o; }
 function matchAny(s, a) { s = (s || "").toLowerCase(); return a.some(x => s.includes(x)); }
 function pick(o, ks) { for (const k of ks) { if (o && o[k] != null && o[k] !== "") return o[k]; } return undefined; }
-function num(x) { if (x == null) return null; const n = parseInt(String(x).replace(/[^\d]/g, ""), 10); return isNaN(n) ? null : n; }
+function num(x) { if (x == null) return null; const n = parseInt(String(x).split(".")[0].replace(/[^\d]/g, ""), 10); return isNaN(n) ? null : n; }
 function int(x) { const n = parseInt(x, 10); return isNaN(n) ? null : n; }
 function json(obj, status = 200, cacheSecs = 0) {
   return new Response(JSON.stringify(obj), { status, headers: {
