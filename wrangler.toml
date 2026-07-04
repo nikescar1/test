@@ -1,0 +1,3 @@
+name = "mini-deal-o-meter"
+pages_build_output_dir = "."
+compatibility_date = "2024-11-01"
