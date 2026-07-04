@@ -98,8 +98,21 @@
   .carcell .c1{color:var(--ink)}
   .carcell .c2{color:var(--muted);font-size:11px}
   .carcell a{text-decoration:none;font-size:11px;white-space:nowrap}
+  .carcell a.detail-link{display:inline-block;margin-top:4px;font-size:13px;font-weight:700;color:var(--green);
+    border:1px solid var(--green);border-radius:7px;padding:4px 10px;background:rgba(25,160,110,.08)}
+  .carcell a.detail-link:hover{background:var(--green);color:#06170f}
   .del{cursor:pointer;color:var(--muted2);border:none;background:none;font-size:16px;padding:0 4px}
   .del:hover{color:var(--chili)}
+  th[data-sort]{cursor:pointer;user-select:none}
+  th[data-sort]:hover{color:var(--ink)}
+  th .arrow{color:var(--green);margin-left:3px}
+  .tfilters{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:14px;padding:12px 14px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+  .tfilters .fg{display:flex;flex-direction:column;gap:5px}
+  .tfilters label{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .tfilters input{width:96px;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);
+    font-family:var(--font-mono);font-size:13px;padding:7px 9px}
+  .tfilters input:focus{outline:none;border-color:var(--green)}
 
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
   @media(min-width:520px){.stats{grid-template-columns:repeat(3,1fr)}}
@@ -197,10 +210,20 @@
         <button class="act ghost" id="clearBtn">Clear all</button>
       </div>
 
+      <div class="tfilters">
+        <div class="fg"><label>Price min</label><input id="fPriceMin" type="text" inputmode="numeric" placeholder="$ min"></div>
+        <div class="fg"><label>Price max</label><input id="fPriceMax" type="text" inputmode="numeric" placeholder="$ max"></div>
+        <div class="fg"><label>Mileage min</label><input id="fMilesMin" type="text" inputmode="numeric" placeholder="mi min"></div>
+        <div class="fg"><label>Mileage max</label><input id="fMilesMax" type="text" inputmode="numeric" placeholder="mi max"></div>
+        <button class="act ghost" id="fReset" style="margin-left:auto">Reset filters</button>
+      </div>
+
       <div class="tablewrap">
         <table id="tbl">
           <thead><tr>
-            <th style="width:20%">Mileage</th><th style="width:20%">Price&nbsp;($)</th>
+            <th data-sort="miles" style="width:16%">Mileage<span class="arrow"></span></th>
+            <th data-sort="price" style="width:16%">Price&nbsp;($)<span class="arrow"></span></th>
+            <th data-sort="deal" style="width:14%">Deal<span class="arrow"></span></th>
             <th>Vehicle</th><th style="width:30px"></th>
           </tr></thead>
           <tbody id="tbody"></tbody>
@@ -286,6 +309,8 @@ const TIERS=[
 ];
 
 let rows=[];
+let sortKey=null, sortDir=1;
+let filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null};
 
 /* ===== helpers ===== */
 function num(x){if(x==null)return null;const n=parseInt(String(x).replace(/[^\d]/g,""),10);return isNaN(n)?null:n;}
@@ -394,20 +419,54 @@ function bandsAt(model,miles){
     {tier:TIERS[2],lo:e[1],hi:e[2]},{tier:TIERS[3],lo:e[2],hi:e[3]},{tier:TIERS[4],lo:e[3],hi:Infinity},
   ];
 }
+function tierForRow(m,price,miles){
+  if(!m||!m.n||!price)return null;
+  const useMiles=m.type==="regression"?(miles||0):0;
+  const fair=predict(m,useMiles),s=m.sigma||1,z=(price-fair)/s;
+  const t=TIERS.find(t=>z<=t.zMax)||TIERS[TIERS.length-1];
+  return {tier:t,z,fair};
+}
+function passesFilter(r){
+  if(filt.minPrice!=null && (!r.price||r.price<filt.minPrice))return false;
+  if(filt.maxPrice!=null && (!r.price||r.price>filt.maxPrice))return false;
+  if(filt.minMiles!=null && (r.miles==null||r.miles<filt.minMiles))return false;
+  if(filt.maxMiles!=null && (r.miles==null||r.miles>filt.maxMiles))return false;
+  return true;
+}
 
 /* ===== table ===== */
 const tbody=document.getElementById("tbody");
-function renderTable(){
+function updateSortIndicators(){
+  document.querySelectorAll("#tbl thead th[data-sort]").forEach(th=>{
+    const span=th.querySelector(".arrow");
+    span.textContent = sortKey===th.dataset.sort ? (sortDir===1?" ▲":" ▼") : "";
+  });
+}
+function renderTable(m){
   tbody.innerHTML="";
-  if(!rows.length){tbody.innerHTML=`<tr><td colspan="4"><div class="empty">No listings. Drop a saved page, add a row, or paste text.</div></td></tr>`;return;}
-  rows.forEach((r,i)=>{
+  updateSortIndicators();
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="5"><div class="empty">No listings. Drop a saved page, add a row, or paste text.</div></td></tr>`;return;}
+  let list=rows.map((r,i)=>({r,i})).filter(o=>passesFilter(o.r)).map(o=>({...o,deal:tierForRow(m,o.r.price,o.r.miles)}));
+  if(!list.length){tbody.innerHTML=`<tr><td colspan="5"><div class="empty">No cars match the current filters.</div></td></tr>`;return;}
+  if(sortKey){
+    list.sort((a,b)=>{
+      let av,bv;
+      if(sortKey==="miles"){av=a.r.miles??Infinity;bv=b.r.miles??Infinity;}
+      else if(sortKey==="price"){av=a.r.price||0;bv=b.r.price||0;}
+      else{av=a.deal?a.deal.z:Infinity;bv=b.deal?b.deal.z:Infinity;}
+      return (av-bv)*sortDir;
+    });
+  }
+  list.forEach(({r,i,deal})=>{
     const car=[r.color,r.title].filter(Boolean).join(" · ")||"—";
     const dealer=[r.dealer,r.dist].filter(Boolean).join(" · ");
-    const link=r.link?` <a href="${r.link}" target="_blank" rel="noopener" title="Open detail page to read mileage">↗ miles</a>`:"";
+    const link=r.link?` <a class="detail-link" href="${r.link}" target="_blank" rel="noopener" title="Open detail page">Link</a>`:"";
+    const dealCell=deal?`<span style="color:${deal.tier.color};font-weight:700">${deal.tier.name}</span>`:`<span style="color:var(--muted2)">—</span>`;
     const tr=document.createElement("tr");
     tr.innerHTML=
       `<td><input data-i="${i}" data-f="miles" value="${r.miles??""}" inputmode="numeric" placeholder="add ↗"></td>`+
       `<td><input data-i="${i}" data-f="price" value="${r.price||""}" inputmode="numeric"></td>`+
+      `<td>${dealCell}</td>`+
       `<td class="carcell"><div class="c1">${car}</div><div class="c2">${dealer}${link}</div></td>`+
       `<td><button class="del" data-del="${i}" title="remove">×</button></td>`;
     tbody.appendChild(tr);
@@ -419,7 +478,27 @@ tbody.addEventListener("input",e=>{
   else rows[i][f]=num(t.value)||0;
   recompute(false);
 });
-tbody.addEventListener("click",e=>{const d=e.target.dataset.del;if(d==null)return;rows.splice(+d,1);renderTable();recompute();});
+tbody.addEventListener("click",e=>{const d=e.target.dataset.del;if(d==null)return;rows.splice(+d,1);recompute();});
+document.querySelector("#tbl thead").addEventListener("click",e=>{
+  const th=e.target.closest("th[data-sort]"); if(!th)return;
+  const key=th.dataset.sort;
+  if(sortKey===key) sortDir=-sortDir; else {sortKey=key; sortDir=1;}
+  recompute(true);
+});
+["fPriceMin","fPriceMax","fMilesMin","fMilesMax"].forEach(id=>{
+  document.getElementById(id).addEventListener("input",()=>{
+    filt.minPrice=num(document.getElementById("fPriceMin").value);
+    filt.maxPrice=num(document.getElementById("fPriceMax").value);
+    filt.minMiles=num(document.getElementById("fMilesMin").value);
+    filt.maxMiles=num(document.getElementById("fMilesMax").value);
+    recompute(true);
+  });
+});
+document.getElementById("fReset").addEventListener("click",()=>{
+  ["fPriceMin","fPriceMax","fMilesMin","fMilesMax"].forEach(id=>document.getElementById(id).value="");
+  filt={minPrice:null,maxPrice:null,minMiles:null,maxMiles:null};
+  recompute(true);
+});
 
 /* ===== stats ===== */
 function renderStats(m){
@@ -586,9 +665,9 @@ function renderNotes(m){
 
 /* ===== orchestration ===== */
 function recompute(reTable=true){
-  if(reTable)renderTable();
   const data=rows.filter(r=>r.price>0);
   const m=computeModel(data);
+  if(reTable)renderTable(m);
   renderStats(m);renderEvaluation(m);renderChart(m);renderNotes(m);
 }
 function loadCars(cars,bannerMsg){
